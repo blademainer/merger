@@ -123,7 +123,7 @@ func (p *Processor) processTargetDir() {
 			if p.debug {
 				fmt.Printf("Processing file: %v\n", file)
 			}
-			p.processFile(file)
+			go p.processFile(file)
 		case <-p.done:
 			fmt.Println("Exit processor by done channel.")
 			return
