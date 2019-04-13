@@ -1,7 +1,5 @@
 module github.com/blademainer/merger
 
-go 1.12
-
 require (
 	github.com/blademainer/commons v0.0.5
 	github.com/go-playground/locales v0.12.1 // indirect
