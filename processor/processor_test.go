@@ -5,6 +5,7 @@ import (
 	"gopkg.in/go-playground/assert.v1"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -15,8 +16,10 @@ func TestProcessor_Process(t *testing.T) {
 	if e != nil {
 		panic(e)
 	}
-	if e := ioutil.WriteFile(fmt.Sprintf("%v/%v", sourceDir, "test"), []byte("hello"), os.ModePerm); e != nil {
-		panic(e)
+	for i := 0; i < 1000; i++ {
+		if e := ioutil.WriteFile(fmt.Sprintf("%v/%v%v", sourceDir, "test", i), []byte("hello"), os.ModePerm); e != nil {
+			panic(e)
+		}
 	}
 
 	p, e := InitProcessor(sourceDir, targetDir, true, 10, true)
@@ -61,4 +64,10 @@ func TestGetPath(t *testing.T) {
 	path := processor.buildTargetPath("a/b/c" + subPath)
 	fmt.Println(path)
 	assert.Equal(t, path, processor.targetPath + subPath)
+}
+
+func TestGetDir(t *testing.T) {
+	targetPath := "asd/bvbb"
+	targetDir := filepath.Dir(targetPath)
+	fmt.Println(targetDir)
 }

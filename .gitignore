@@ -226,3 +226,4 @@ go-build*go-exercise
 go.sum
 test_source_dir
 test_target_dir
+test*/

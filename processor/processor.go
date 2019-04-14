@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"context"
 	"fmt"
 	fio "github.com/blademainer/commons/pkg/io"
 	"gopkg.in/go-playground/validator.v9"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Processor struct {
@@ -81,13 +83,35 @@ func sureDir(path string, mode os.FileMode) {
 
 }
 
+func (p *Processor) waitingForWorkerDone() {
+	timeout, _ := context.WithTimeout(context.TODO(), 10*time.Second)
+	for {
+		select {
+		case <-timeout.Done():
+			fmt.Println("Waiting fileChan consumer timeout!!! channel size: ", len(p.fileChan))
+			return
+		default:
+			i := len(p.fileChan)
+			if p.debug {
+				fmt.Println("Least file in chan", i)
+			}
+			if i == 0 {
+				return
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+}
+
 func (p *Processor) Process() {
 	p.Add(2)
 	go func() {
 		defer func() {
+			p.waitingForWorkerDone()
 			p.done <- true
 			p.Done()
 		}()
+		// waiting for done
 		p.readSourceDir()
 	}()
 	go func() {
@@ -117,15 +141,50 @@ func (p *Processor) readSourceDir() {
 }
 
 func (p *Processor) processTargetDir() {
+	wp, workerDoneCh, e := InitWorkerPool(p.concurrent)
+	if e != nil {
+		fmt.Println("Init worker with error: ", e.Error())
+		panic(e)
+	}
+
+	size := 0
+	doneSize := 0
+
+	go func() {
+		for {
+			select {
+			case <-workerDoneCh:
+				fmt.Println("Done one job..")
+				doneSize++
+			}
+		}
+	}()
+
 	for {
 		select {
 		case file := <-p.fileChan:
+			size++
 			if p.debug {
 				fmt.Printf("Processing file: %v\n", file)
 			}
-			go p.processFile(file)
+			wp.Execute(func() error {
+				p.processFile(file)
+				return nil
+			})
 		case <-p.done:
+			for i := 0; i < p.concurrent; i++ {
+				if size == doneSize {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
 			fmt.Println("Exit processor by done channel.")
+			e := wp.Stop()
+			if e != nil {
+				fmt.Printf("Failed to stop workerpool! error: %v\n", e.Error())
+			} else {
+				fmt.Printf("Succeed stop workerpool!")
+			}
 			return
 		}
 	}
@@ -162,11 +221,13 @@ func (p *Processor) processFile(file FileEntry) {
 			if err := os.Rename(targetPath, targetPath+"."+targetHash); err != nil {
 				fmt.Printf("Failed to rename file: %v to: %v, error: %v\n", sourcePath, targetPath, err.Error())
 			} else {
-				rename = true
+				fmt.Printf("Succeed move different file of file: %v to: %v,\n", sourcePath, targetPath)
+				//rename = true
 			}
 		}
 	} else if os.IsNotExist(err) {
 		rename = true
+		fmt.Printf("Target file: %v is not exists so should rename from source: %v. \n", targetPath, sourcePath)
 	} else {
 		// Schrodinger: file may or may not exist. See err for details.
 
@@ -180,7 +241,7 @@ func (p *Processor) processFile(file FileEntry) {
 			return
 		}
 
-		targetDir := filepath.Base(targetPath)
+		targetDir := filepath.Dir(targetPath)
 		err := os.MkdirAll(targetDir, sourceStat.Mode())
 		if err != nil {
 			fmt.Printf("Failed to mkdir : %v, error: %v\n", targetDir, err.Error())
